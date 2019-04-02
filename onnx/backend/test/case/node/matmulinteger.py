@@ -16,11 +16,11 @@ class MatMulInteger(Base):
     def export():  # type: () -> None
         node = onnx.helper.make_node(
             'MatMulInteger',
-            inputs=['a', 'a_zero_point', 'b', 'b_zero_point'],
+            inputs=['A', 'a_zero_point', 'B', 'b_zero_point'],
             outputs=['c'],
         )
 
-        a = np.array([
+        A = np.array([
             [11, 7, 3],
             [10, 6, 2],
             [9,  5, 1],
@@ -29,7 +29,7 @@ class MatMulInteger(Base):
 
         a_zero_point = np.array([12], dtype=np.uint8)
 
-        b = np.array([
+        B = np.array([
             [1, 4],
             [2, 5],
             [3, 6],
@@ -44,5 +44,5 @@ class MatMulInteger(Base):
             [-56, -128],
             ], dtype=np.int32)
 
-        expect(node, inputs=[a, a_zero_point, b, b_zero_point], outputs=[output],
+        expect(node, inputs=[A, a_zero_point, B, b_zero_point], outputs=[output],
                name='test_matmulinteger')
