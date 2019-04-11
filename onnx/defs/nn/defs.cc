@@ -32,15 +32,6 @@ void convPoolShapeInference(
     bool require_kernel_shape,
     int input1Idx,
     int input2Idx) {
-  // propagateElemTypeFromInputToOutput(ctx, 0, 0);
-  // if (ctx.getNumOutputs() > 1) {
-  //  // MaxPool with two outputs case.
-  //  auto output_type = ctx.getOutputType(1);
-  //  if (output_type->value_case() == TypeProto::kTensorType ||
-  //      output_type->value_case() == TypeProto::VALUE_NOT_SET) {
-  //    output_type->mutable_tensor_type()->set_elem_type(TensorProto::INT64);
-  //  }
-  //}
 
   // we need the first input shape for this inference.
   if (!hasInputShape(ctx, input1Idx)) {
@@ -895,7 +886,7 @@ ONNX_OPERATOR_SET_SCHEMA(
 
 static const char* QLinearConv_ver10_doc = R"DOC(
 The convolution operator consumes a quantized input tensor, its scale and zero point,
-a quantized filter, its scale and zero point, and output’s scale and zero point,
+a quantized filter, its scale and zero point, and output's scale and zero point,
 and computes the quantized output. Each scale and zero-point pair must have same shape.
 It means they must be either scalars (per tensor) or 1-D tensors (per output channel).
 Each input or output and its related zero point must have same type.
