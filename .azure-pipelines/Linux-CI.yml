@@ -41,15 +41,13 @@ jobs:
 
   - script: |
       python -m pip install --upgrade pip
+      python -m pip install --quiet -U dos2unix
       python -m pip install numpy
       git submodule update --init --recursive
       export ONNX_ML=${onnx_ml}
       export DEBUG=${onnx_debug}
       export ONNX_BUILD_TESTS=1
-      export ONNX_NAMESPACE=ONNX_NAMESPACE_FOO_BAR_FOR_CI
-      export CMAKE_ARGS="-DONNX_WERROR=ON"
-      export CMAKE_ARGS="${CMAKE_ARGS} -DONNXIFI_DUMMY_BACKEND=ON"
-      export CMAKE_ARGS="${CMAKE_ARGS} -DONNX_USE_LITE_PROTO=ON"
+      set CMAKE_ARGS=-DONNX_USE_PROTOBUF_SHARED_LIBS=ON -DProtobuf_USE_STATIC_LIBS=OFF -DONNX_USE_LITE_PROTO=ON
       python setup.py --quiet install
     displayName: 'Install ONNX and dependencies'
 
