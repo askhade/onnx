@@ -41,7 +41,7 @@ jobs:
 
   - script: |
       python -m pip install --upgrade pip
-      python -m pip install --quiet -U dos2unix
+      sudo apt-get install -qq -o=Dpkg::Use-Pty=0 -y --no-install-recommends dos2unix
       python -m pip install numpy
       git submodule update --init --recursive
       export ONNX_ML=${onnx_ml}
@@ -96,5 +96,16 @@ jobs:
       # do not use find -exec here, it would ignore the segement fault of gtest.
       ./.setuptools-cmake-build/onnx_gtests
       ./.setuptools-cmake-build/onnxifi_test_driver_gtests onnx/backend/test/data/node
+
+      # Mypy only works with Python 3
+      if [ "${PYTHON_VERSION}" != "python2" ]; then
+        # Mypy only works with our generated _pb.py files when we install in develop mode, so let's do that
+        pip uninstall -y onnx
+        ONNX_NAMESPACE=ONNX_NAMESPACE_FOO_BAR_FOR_CI pip install --no-use-pep517 -e .[mypy]
+        python setup.py --quiet typecheck
+        pip uninstall -y onnx
+        rm -rf .setuptools-cmake-build
+        ONNX_NAMESPACE=ONNX_NAMESPACE_FOO_BAR_FOR_CI pip install .
+      fi
 
     displayName: 'Run ONNX tests'
