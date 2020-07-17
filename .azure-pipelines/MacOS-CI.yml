@@ -24,7 +24,6 @@ jobs:
       versionSpec: '$(python.version)'
 
   - script: |
-      sudo apt-get install -qq -o=Dpkg::Use-Pty=0 -y --no-install-recommends dos2unix
       git submodule update --init --recursive
       python -m pip install --upgrade setuptools
       python -m pip install numpy
@@ -40,8 +39,7 @@ jobs:
 
     displayName: 'Install dependencies and ONNX'
 
-  - script: |      
-      @echo ON
+  - script: |
       # lint python code
       pip install --quiet flake8
       flake8
@@ -50,11 +48,6 @@ jobs:
         exit 1
       fi
 
-      # check line endings to be UNIX
-      find . -type f -regextype posix-extended -regex '.*\.(py|cpp|md|h|cc|proto|proto3|in)' | xargs dos2unix --quiet
-      git status
-      git diff --exit-code
-      
       # check auto-gen files up-to-date
       python onnx/defs/gen_doc.py
       python onnx/gen_proto.py -l
@@ -91,17 +84,5 @@ jobs:
         echo "onnxifi_test_driver_gtests failed"
         exit 1
       fi
-
-      # Mypy only works with Python 3
-      if [ "$(python.version)" != "2.7" ]; then
-        # Mypy only works with our generated _pb.py files when we install in develop mode, so let's do that
-        pip uninstall -y onnx
-        ONNX_NAMESPACE=ONNX_NAMESPACE_FOO_BAR_FOR_CI pip install --no-use-pep517 -e .[mypy]
-        python setup.py --quiet typecheck
-        pip uninstall -y onnx
-        rm -rf .setuptools-cmake-build
-        ONNX_NAMESPACE=ONNX_NAMESPACE_FOO_BAR_FOR_CI pip install .
-      fi
-
 
     displayName: 'Run ONNX Tests'
