@@ -92,6 +92,7 @@ jobs:
       fi
 
       # onnx c++ API tests
+      export LD_LIBRARY_PATH="./.setuptools-cmake-build/:$LD_LIBRARY_PATH"
       # do not use find -exec here, it would ignore the segement fault of gtest.
       ./.setuptools-cmake-build/onnx_gtests
       ./.setuptools-cmake-build/onnxifi_test_driver_gtests onnx/backend/test/data/node
