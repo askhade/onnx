@@ -8,22 +8,24 @@ jobs:
     vmImage: 'vs2017-win2016'
   strategy:
     matrix:
-      py37:
-        python.version: '3.7'
-        onnx_ml: 0
-        onnx_verify_proto: 0
+    #  py38:
+    #    python.version: '3.8'
+    #    onnx_ml: 0
+    #  py38_onnx_ml:
+    #    python.version: '3.8'
+    #    onnx_ml: 1
+    #  py37:
+    #    python.version: '3.7'
+    #    onnx_ml: 0
+    #  py37_onnx_ml:
+    #    python.version: '3.7'
+    #    onnx_ml: 1
       py36:
         python.version: '3.6'
         onnx_ml: 0
-        onnx_verify_proto: 0
-      py37_onnx_ml:
-        python.version: '3.7'
-        onnx_ml: 1
-        onnx_verify_proto: 0
-      py36_verify_proto:
+      py36_onnx_ml:
         python.version: '3.6'
-        onnx_ml: 0
-        onnx_verify_proto: 1
+        onnx_ml: 1
     maxParallel: 4
 
   steps:
@@ -46,7 +48,6 @@ jobs:
       git submodule update --init --recursive
       set ONNX_BUILD_TESTS=1
       set ONNX_ML=$(onnx_ml)
-      set ONNX_VERIFY_PROTO_3=$(onnx_verify_proto)
       set USE_MSVC_STATIC_RUNTIME=0
       set CMAKE_ARGS=-DONNX_USE_PROTOBUF_SHARED_LIBS=ON -DProtobuf_USE_STATIC_LIBS=OFF -DONNX_USE_LITE_PROTO=ON
       python setup.py --quiet install
@@ -54,14 +55,14 @@ jobs:
 
       # onnx c++ API tests
       @echo "Starting onnx_gtests run"
-      .setuptools-cmake-build/Release/onnx_gtests.exe
+      .setuptools-cmake-build\Release\onnx_gtests.exe
       IF NOT %ERRORLEVEL% EQU 0(
         @echo "onnx_gtests failed"
         EXIT 1
       )
 
       @echo "Starting onnxifi_test_driver_gtests run"
-      .setuptools-cmake-build/Release/onnxifi_test_driver_gtests.exe onnx/backend/test/data/node
+      .setuptools-cmake-build\Release\onnxifi_test_driver_gtests.exe onnx\backend\test\data\node
       IF NOT %ERRORLEVEL% EQU 0 (
         @echo "onnxifi_test_driver_gtests failed"
         EXIT 1
