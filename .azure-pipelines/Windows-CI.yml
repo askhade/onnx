@@ -50,15 +50,35 @@ jobs:
       set USE_MSVC_STATIC_RUNTIME=0
       set CMAKE_ARGS=-DONNX_USE_PROTOBUF_SHARED_LIBS=ON -DProtobuf_USE_STATIC_LIBS=OFF -DONNX_USE_LITE_PROTO=ON
 
+      # onnx python api tests
       python setup.py --quiet install
       pytest
+      IF NOT errorlevel 0 (
+        @echo "pytest failed"
+        EXIT 1
+      )
+
+      # onnx c++ API tests
+      ./.setuptools-cmake-build/onnx_gtests.exe
+      IF NOT errorlevel 0 (
+        @echo "onnx_gtests failed"
+        EXIT 1
+      )
+
+      # check auto-gen files up-to-date
       python onnx/defs/gen_doc.py
       python onnx/gen_proto.py -l
       python onnx/gen_proto.py -l --ml
+      python onnx/backend/test/stat_coverage.py
+      backend-test-tools generate-data
+      git status
+      git diff --exit-code
 
       rm -rf .setuptools-cmake-build
       pip install --quiet -e .[mypy]
       python setup.py typecheck
-
-      git diff --exit-code
+      IF NOT errorlevel 0 (
+        @echo "typecheck failed"
+        EXIT 1
+      )
     displayName: Install and test ONNX
