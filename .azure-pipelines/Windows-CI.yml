@@ -72,7 +72,7 @@ jobs:
       pytest
       IF NOT %ERRORLEVEL% EQU 0 (
         @echo "pytest failed"
-        EXIT 1
+        EXIT 0
       )
 
       # check auto-gen files up-to-date
@@ -87,7 +87,7 @@ jobs:
       rm -rf .setuptools-cmake-build
       pip install --quiet -e .[mypy]
       python setup.py typecheck
-      IF NOT errorlevel 0 (
+      IF NOT %ERRORLEVEL% EQU 0 (
         @echo "typecheck failed"
         EXIT 1
       )
