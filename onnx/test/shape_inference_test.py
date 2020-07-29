@@ -1824,7 +1824,7 @@ class TestShapeInference(unittest.TestCase):
              ('xI', TensorProto.FLOAT, (1, 1, 2, 2))],
             [make_node('MaxUnpool', ['xT', 'xI'], 'Y', kernel_shape=[2, 2], strides=[2, 2])],
             [])
-        self._assert_inferred(graph, [make_tensor_value_info('Y', TensorProto.FLOAT, (1, 2, 4, 4))])
+        self._assert_inferred(graph, [make_tensor_value_info('Y', TensorProto.FLOAT, (1, 1, 4, 4))])
 
     def test_maxunpool_shape_with_output_shape(self):  # type: () -> None
         graph = self._make_graph(
