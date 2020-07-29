@@ -43,7 +43,13 @@ jobs:
   - script: |
       call activate py$(python.version)
       python -m pip install --upgrade pip
-      python -m pip install --quiet pytest nbval numpy
+      IF NOT "$(python.version)" EQU "2.7" (
+        python -m pip install --quiet pytest==5.4.3 nbval numpy
+      )
+      ELSE (
+        python -m pip install --quiet pytest nbval numpy
+      )
+
 
       git submodule update --init --recursive
       set ONNX_BUILD_TESTS=1
