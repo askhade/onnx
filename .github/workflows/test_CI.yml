@@ -30,16 +30,16 @@ jobs:
     - name: Install python dependencies
       run: |
         python -m pip install --upgrade pip
-        IF '${{ matrix.python-version }}' == '2.7' (
+        if ('${{ matrix.python-version }}' == '2.7') {
           pip install pytest nbval numpy wheel
           echo Running 2.7
-        )
-        ELSE (
+        }
+        else {
           # pytest 6.0 made deprecation warnings fail by default, pinning pytest to 5.4.3.
           # TODO replace deprecated function with the suggested one. https://docs.pytest.org/en/stable/deprecations.html#id5
           pip install pytest==5.4.3 nbval numpy wheel
           echo Running 3.*
-        )
+        }
 
     # Runs a single command using the runners shell
     - name: Run a one-line script
