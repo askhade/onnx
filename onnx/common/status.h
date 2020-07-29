@@ -1,9 +1,10 @@
-// Copyright (c) Facebook Inc. and Microsoft Corporation.
+// Copyright (c) ONNX Project Contributors.
 // Licensed under the MIT license.
 
 #pragma once
 
 #include <memory>
+#include <ostream>
 #include <string>
 
 namespace ONNX_NAMESPACE {

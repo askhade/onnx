@@ -19,6 +19,14 @@ using namespace pybind11::literals;
 PYBIND11_MODULE(onnx_cpp2py_export, onnx_cpp2py_export) {
   onnx_cpp2py_export.doc() = "Python interface to onnx";
 
+  onnx_cpp2py_export.attr("ONNX_ML") = py::bool_(
+#ifdef ONNX_ML
+      true
+#else // ONNX_ML
+      false
+#endif // ONNX_ML
+  );
+
   // Submodule `schema`
   auto defs = onnx_cpp2py_export.def_submodule("defs");
   defs.doc() = "Schema submodule";
@@ -45,9 +53,31 @@ PYBIND11_MODULE(onnx_cpp2py_export, onnx_cpp2py_export) {
           &OpSchema::has_type_and_shape_inference_function)
       .def_property_readonly(
           "type_constraints", &OpSchema::typeConstraintParams)
-      .def_static("is_infinite", [](int v) {
-        return v == std::numeric_limits<int>::max();
+      .def_static(
+          "is_infinite",
+          [](int v) { return v == std::numeric_limits<int>::max(); })
+      .def_property_readonly("has_function", &OpSchema::HasFunction)
+      .def_property_readonly("_function_body", [](OpSchema* op) -> py::bytes {
+        std::string bytes = "";
+        if (op->HasFunction())
+          op->GetFunction()->SerializeToString(&bytes);
+        return py::bytes(bytes);
+      })
+      .def_property_readonly("has_context_dependent_function", &OpSchema::HasContextDependentFunction)
+      .def("get_context_dependent_function", [](OpSchema* op, const py::bytes& bytes) -> py::bytes {
+        NodeProto proto{};
+        ParseProtoFromPyBytes(&proto, bytes);
+
+        std::string func_bytes = "";
+        if (op->HasContextDependentFunction()) {
+          FunctionBodyBuildContextImpl ctx(proto);
+          FunctionProto func_proto;
+          op->BuildContextDependentFunction(ctx, func_proto);
+          func_proto.SerializeToString(&func_bytes);
+        }
+        return py::bytes(func_bytes);
       });
+;
 
   py::class_<OpSchema::Attribute>(op_schema, "Attribute")
       .def_readonly("name", &OpSchema::Attribute::name)
@@ -75,6 +105,11 @@ PYBIND11_MODULE(onnx_cpp2py_export, onnx_cpp2py_export) {
       .value("Optional", OpSchema::Optional)
       .value("Variadic", OpSchema::Variadic);
 
+  py::enum_<OpSchema::DifferentiationCategory>(op_schema, "DifferentiationCategory")
+      .value("Unknown", OpSchema::Unknown)
+      .value("Differentiable", OpSchema::Differentiable)
+      .value("NonDifferentiable", OpSchema::NonDifferentiable);
+
   py::class_<OpSchema::FormalParameter>(op_schema, "FormalParameter")
       .def_property_readonly("name", &OpSchema::FormalParameter::GetName)
       .def_property_readonly("types", &OpSchema::FormalParameter::GetTypes)
@@ -83,7 +118,10 @@ PYBIND11_MODULE(onnx_cpp2py_export, onnx_cpp2py_export) {
           "description", &OpSchema::FormalParameter::GetDescription)
       .def_property_readonly("option", &OpSchema::FormalParameter::GetOption)
       .def_property_readonly(
-          "isHomogeneous", &OpSchema::FormalParameter::GetIsHomogeneous);
+          "isHomogeneous", &OpSchema::FormalParameter::GetIsHomogeneous)
+      .def_property_readonly(
+        "differentiationCategory",
+        &OpSchema::FormalParameter::GetDifferentiationCategory);
 
   py::enum_<AttributeProto::AttributeType>(op_schema, "AttrType")
       .value("FLOAT", AttributeProto::FLOAT)
@@ -95,7 +133,9 @@ PYBIND11_MODULE(onnx_cpp2py_export, onnx_cpp2py_export) {
       .value("INTS", AttributeProto::INTS)
       .value("STRINGS", AttributeProto::STRINGS)
       .value("TENSORS", AttributeProto::TENSORS)
-      .value("GRAPHS", AttributeProto::GRAPHS);
+      .value("GRAPHS", AttributeProto::GRAPHS)
+      .value("SPARSE_TENSOR", AttributeProto::SPARSE_TENSOR)
+      .value("SPARSE_TENSORS", AttributeProto::SPARSE_TENSORS);
 
   py::enum_<OpSchema::SupportType>(op_schema, "SupportType")
       .value("COMMON", OpSchema::SupportType::COMMON)
@@ -151,34 +191,6 @@ PYBIND11_MODULE(onnx_cpp2py_export, onnx_cpp2py_export) {
     return OpSchemaRegistry::get_all_schemas_with_history();
   });
 
-  defs.def(
-      "get_all_functions",
-      [](const std::string& domain)
-          -> std::unordered_map<std::string, std::vector<py::bytes>> {
-        std::multimap<std::string, const FunctionProto*> temp_ptr_map;
-        std::unordered_map<std::string, std::vector<py::bytes>> temp_map;
-        FunctionBuilderRegistry& function_registry =
-            FunctionBuilderRegistry::OnnxInstance();
-
-        Common::Status status =
-            function_registry.GetFunctions(domain, &temp_ptr_map);
-        if (!status.IsOK()) {
-          throw std::runtime_error(
-              "Failed to retrieve function list for domain '" + domain + "'!");
-        }
-        for (auto iter = temp_ptr_map.begin(); iter != temp_ptr_map.end();
-             ++iter) {
-          std::string bytes;
-          if (!iter->second->SerializeToString(&bytes)) {
-            throw std::runtime_error(
-                "Failed to serialize registered function for '" + iter->first +
-                "'!");
-          }
-          temp_map[iter->first].emplace_back(py::bytes(bytes));
-        }
-        return temp_map;
-      });
-
   // Submodule `checker`
   auto checker = onnx_cpp2py_export.def_submodule("checker");
   checker.doc() = "Checker submodule";
@@ -214,6 +226,14 @@ PYBIND11_MODULE(onnx_cpp2py_export, onnx_cpp2py_export) {
       });
 
   checker.def(
+      "check_sparse_tensor",
+      [](const py::bytes& bytes, const checker::CheckerContext& ctx) -> void {
+        SparseTensorProto proto{};
+        ParseProtoFromPyBytes(&proto, bytes);
+        checker::check_sparse_tensor(proto, ctx);
+      });
+
+  checker.def(
       "check_attribute",
       [](const py::bytes& bytes, const checker::CheckerContext& ctx) -> void {
         AttributeProto proto{};
@@ -245,7 +265,9 @@ PYBIND11_MODULE(onnx_cpp2py_export, onnx_cpp2py_export) {
     checker::check_model(proto);
   });
 
-  checker.def("check_model_path", (void (*) (const std::string&)) &checker::check_model);
+  checker.def(
+      "check_model_path",
+      (void (*)(const std::string&)) & checker::check_model);
 
   // Submodule `optimizer`
   auto optimizer = onnx_cpp2py_export.def_submodule("optimizer");
@@ -256,7 +278,7 @@ PYBIND11_MODULE(onnx_cpp2py_export, onnx_cpp2py_export) {
       [](const py::bytes& bytes, const std::vector<std::string>& names) {
         ModelProto proto{};
         ParseProtoFromPyBytes(&proto, bytes);
-        auto const result = optimization::Optimize(std::move(proto), names);
+        auto const result = optimization::Optimize(proto, names);
         std::string out;
         result.SerializeToString(&out);
         return py::bytes(out);
@@ -268,7 +290,7 @@ PYBIND11_MODULE(onnx_cpp2py_export, onnx_cpp2py_export) {
         ModelProto proto{};
         ParseProtoFromPyBytes(&proto, bytes);
         auto const result =
-            optimization::OptimizeFixed(std::move(proto), names);
+            optimization::OptimizeFixed(proto, names);
         std::string out;
         result.SerializeToString(&out);
         return py::bytes(out);
@@ -285,8 +307,7 @@ PYBIND11_MODULE(onnx_cpp2py_export, onnx_cpp2py_export) {
         ModelProto proto{};
         ParseProtoFromPyBytes(&proto, bytes);
         shape_inference::InferShapes(proto);
-        auto result =
-            version_conversion::ConvertVersion(proto, target);
+        auto result = version_conversion::ConvertVersion(proto, target);
         std::string out;
         result.SerializeToString(&out);
         return py::bytes(out);
@@ -296,14 +317,14 @@ PYBIND11_MODULE(onnx_cpp2py_export, onnx_cpp2py_export) {
   auto shape_inference = onnx_cpp2py_export.def_submodule("shape_inference");
   shape_inference.doc() = "Shape Inference submodule";
 
-  shape_inference.def("infer_shapes", [](const py::bytes& bytes) {
+  shape_inference.def("infer_shapes", [](const py::bytes& bytes, bool check_type) {
     ModelProto proto{};
     ParseProtoFromPyBytes(&proto, bytes);
-    shape_inference::InferShapes(proto);
+    shape_inference::InferShapes(proto, check_type);
     std::string out;
     proto.SerializeToString(&out);
     return py::bytes(out);
-  });
+  }, "bytes"_a, "check_type"_a = false);
 }
 
 } // namespace ONNX_NAMESPACE

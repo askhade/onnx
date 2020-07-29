@@ -22,8 +22,8 @@ ModelProto DefaultVersionConverter::convert_version(
     const ModelProto& mp_in,
     const OpSetID& initial_version,
     const OpSetID& target_version) const {
-  const std::string initial_domain = initial_version.domain();
-  const std::string target_domain = target_version.domain();
+  const std::string& initial_domain = initial_version.domain();
+  const std::string& target_domain = target_version.domain();
   assertDefaultDomain(initial_domain, target_domain);
 
   for (auto it = mp_in.opset_import().begin(); it != mp_in.opset_import()
@@ -77,6 +77,13 @@ ModelProto DefaultVersionConverter::convert_version(
     for (Node* op : nodes) {
       debug(std::string("Finding schema for ") + std::string(op->kind().toString()));
       const std::string op_name = op->kind().toString();
+      if (op_name == "ConstantFill")
+      {
+        std::cerr << "Warning: skipping schema search for experimental op 'ConstantFill' and keeping the op as is. "
+        "Please be advised the converted model may not be working properly if target runtime does not support this "
+        "experimental op." << std::endl;
+        continue;
+      }
       if (op_name != "Undefined") {
         auto& op_domain_map = all_schemas.at(op_name);
         if (searchOpDomainMap(op_domain_map, curr_version, step)) {
