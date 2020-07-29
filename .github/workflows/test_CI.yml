@@ -30,7 +30,7 @@ jobs:
     - name: Install python dependencies
       run: |
         python -m pip install --upgrade pip
-        if ('${{ matrix.python-version }}' == '2.7') {
+        if ('${{ matrix.python-version }}' -eq '2.7') {
           pip install pytest nbval numpy wheel
           echo Running 2.7
         }
