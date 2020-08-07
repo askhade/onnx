@@ -53,14 +53,22 @@ jobs:
 #    displayName: 'Install dependencies'
 
   - script: |
-      sudo apt-get update
-      $py_version = python$(python.version)
-      echo $py_version
-      sudo apt-get install python3.6
-      sudo python3 -m pip install --upgrade pip
+      add-apt-repository -y ppa:deadsnakes/ppa
+      apt-get update
+      apt-get install -y --no-install-recommends python3.6 python3.6-dev
+      update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.6 1
+      update-alternatives --install /usr/bin/python python /usr/bin/python2.7 2
+      update-alternatives --set python3 /usr/bin/python3.6
+      #TODO: the old one(/usr/bin/pip3) should be uninstalled first. Because the one will be
+      #put at /usr/local/. Then there will be two pips.
+      /usr/bin/python3.6 -m pip install --upgrade --force-reinstall pip==20.2.1
+      echo "------- Installing dos2unix-----------"
       sudo apt-get install -qq -o=Dpkg::Use-Pty=0 -y --no-install-recommends dos2unix
+      echo "------- Installing protobuf-----------"
       sudo apt-get install -y --no-install-recommends protobuf-compiler libprotoc-dev
-      python3 -m pip install numpy
+      echo "------- Installing Numpy-----------"
+      python -m pip install numpy
+      echo "------- Installing ONNX-----------"
       git submodule update --init --recursive
       export ONNX_BUILD_TESTS=1
       if [ '$(onnx_debug)' == '1' ]; then
