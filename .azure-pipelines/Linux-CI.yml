@@ -40,8 +40,23 @@ jobs:
     maxParallel: 6
 
   steps:
+#  - task: CondaEnvironment@1
+#    inputs:
+#      createCustomEnvironment: true
+#      environmentName: 'py$(python.version)'
+#      packageSpecs: 'python=$(python.version)'
+
+#  - script: |
+#      python -m pip install --upgrade pip
+#      conda config --set always_yes yes --set changeps1 no
+#      conda install -c conda-forge protobuf
+#    displayName: 'Install dependencies'
+
   - script: |
-      python -m pip install --upgrade pip
+      $py_version = python$(python.version)
+      echo $py_version
+      sudo apt-get install python3.6
+      python3 -m pip install --upgrade pip
       sudo apt-get install -qq -o=Dpkg::Use-Pty=0 -y --no-install-recommends dos2unix
       sudo apt-get install -y --no-install-recommends protobuf-compiler libprotoc-dev
       python -m pip install numpy
