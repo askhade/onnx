@@ -53,13 +53,14 @@ jobs:
 #    displayName: 'Install dependencies'
 
   - script: |
+      sudo apt-get update
       $py_version = python$(python.version)
       echo $py_version
       sudo apt-get install python3.6
-      python3 -m pip install --upgrade pip
+      sudo python3 -m pip install --upgrade pip
       sudo apt-get install -qq -o=Dpkg::Use-Pty=0 -y --no-install-recommends dos2unix
       sudo apt-get install -y --no-install-recommends protobuf-compiler libprotoc-dev
-      python -m pip install numpy
+      python3 -m pip install numpy
       git submodule update --init --recursive
       export ONNX_BUILD_TESTS=1
       if [ '$(onnx_debug)' == '1' ]; then
