@@ -40,17 +40,34 @@ jobs:
     maxParallel: 6
 
   steps:
-#  - task: CondaEnvironment@1
-#    inputs:
-#      createCustomEnvironment: true
-#      environmentName: 'py$(python.version)'
-#      packageSpecs: 'python=$(python.version)'
+  - task: UsePythonVersion@0
+    inputs:
+      versionSpec: '$(python.version)'
+      addToPath: true
 
-#  - script: |
-#      python -m pip install --upgrade pip
-#      conda config --set always_yes yes --set changeps1 no
-#      conda install -c conda-forge protobuf
-#    displayName: 'Install dependencies'
+  - script: |
+      python -m pip install --upgrade pip
+      python -m pip install virtualenv
+      python -m virtualenv py$(python.version)
+      source py$(python.version)/bin/activate
+      python -m pip install numpy protobuf
+      sudo apt-get install protobuf-compiler libprotoc-dev
+      sudo apt-get install -qq -o=Dpkg::Use-Pty=0 -y --no-install-recommends dos2unix
+      git submodule update --init --recursive
+      export ONNX_BUILD_TESTS=1
+      if [ '$(onnx_debug)' == '1' ]; then
+        export DEBUG=1
+      fi
+      if [ '$(onnx_ml)' == '1' ]; then
+        export ONNX_ML=1
+      fi
+      export CMAKE_ARGS="-DONNXIFI_DUMMY_BACKEND=ON -DONNX_WERROR=ON"
+      if [ '$(onnx_lite)' == '1' ]; then
+        export CMAKE_ARGS="${CMAKE_ARGS} -DONNX_USE_LITE_PROTO=ON"
+      fi
+      export ONNX_NAMESPACE=ONNX_NAMESPACE_FOO_BAR_FOR_CI
+      python setup.py --quiet install
+    displayName: 'Install ONNX and dependencies - Test 1'
 
   - script: |
       sudo add-apt-repository -y ppa:deadsnakes/ppa
