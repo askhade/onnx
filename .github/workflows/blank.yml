@@ -37,7 +37,6 @@ jobs:
         uses: actions/setup-python@v1
         with:
           python-version: ${{ matrix.python-version }}
-          architecture: ${{ matrix.architecture }}
       
       - uses: actions/upload-artifact@v1
         with:
