@@ -45,7 +45,7 @@ jobs:
           git submodule update --init --recursive
           python -m pip install --upgrade pip setuptools wheel
           python -m pip install numpy
-          pip install --quiet pytest==5.4.3
+          pip install --quiet pytest==5.4.3 nbval
           export CC=clang
           export CXX=clang++
           brew update
