@@ -38,6 +38,19 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       
+      - name: Install dependencies and build ONNX
+        shell: bash
+        run: |
+          git submodule update --init --recursive
+          python -m pip install --upgrade pip setuptools
+          python -m pip install numpy
+          brew update
+          brew install ccache protobuf
+          export PATH="/usr/local/opt/ccache/libexec:$PATH"
+          echo PATH: $PATH
+          pip install pytest-runner
+          python setup.py --quiet install
+      
       - uses: actions/upload-artifact@v1
         with:
           name: wheels
