@@ -41,26 +41,24 @@ jobs:
       - name: Install dependencies and build ONNX
         shell: bash
         run: |
+          set -e
           git submodule update --init --recursive
-          python -m pip install --upgrade pip setuptools
+          python -m pip install --upgrade pip setuptools wheel
           python -m pip install numpy
+          pip install --quiet pytest==5.4.3
+          export CC=clang
+          export CXX=clang++
           brew update
-          brew install ccache protobuf
-          export PATH="/usr/local/opt/ccache/libexec:$PATH"
+          brew install protobuf
           echo PATH: $PATH
-          pip install pytest-runner
+          
+          export ONNX_ML=1
+          ONNX_NAMESPACE=ONNX_REL_1_7
+          
           python setup.py --quiet install
       
       - uses: actions/upload-artifact@v1
         with:
           name: wheels
           path: dist
-      # Runs a single command using the runners shell
-      - name: Run a one-line script
-        run: echo Hello, world!
-
-      # Runs a set of commands using the runners shell
-      - name: Run a multi-line script
-        run: |
-          echo Add other actions to build,
-          echo test, and deploy your project.
+      
