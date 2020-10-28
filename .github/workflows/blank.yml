@@ -18,7 +18,7 @@ jobs:
     runs-on: macos-latest
     strategy:
       matrix:
-        python-version: [3.5, 3.6, 3.7, 3.8]
+        python-version: [3.5, 3.7, 3.8]
         architecture: ['x86_64']
 
     # Steps represent a sequence of tasks that will be executed as part of the job
@@ -53,9 +53,11 @@ jobs:
           echo PATH: $PATH
           
           export ONNX_ML=1
-          ONNX_NAMESPACE=ONNX_REL_1_7
+          export ONNX_NAMESPACE=ONNX_REL_1_7
           
-          python setup.py --quiet install
+          python setup.py bdist_wheel
+          for file in dist/*.whl; do echo {pip install --upgrade $file}; done
+          pytest
       
       - uses: actions/upload-artifact@v1
         with:
