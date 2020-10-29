@@ -18,7 +18,7 @@ jobs:
     runs-on: macos-latest
     strategy:
       matrix:
-        python-version: [3.5]
+        python-version: [3.5, 3.6, 3.7, 3.8]
         architecture: ['x86_64']
 
     # Steps represent a sequence of tasks that will be executed as part of the job
@@ -42,7 +42,6 @@ jobs:
         shell: bash
         run: |
           set -e
-          git submodule update --init --recursive
           python -m pip install --upgrade pip setuptools wheel
           python -m pip install numpy
           pip install --quiet pytest==5.4.3 nbval
