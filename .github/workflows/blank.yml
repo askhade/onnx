@@ -48,7 +48,9 @@ jobs:
           pip install --quiet pytest==5.4.3 nbval
           export CC=clang
           export CXX=clang++
+          echo "Starting brew update"
           brew update
+          echo "Starting protobuf install"
           brew install protobuf
           echo PATH: $PATH
           
@@ -57,7 +59,7 @@ jobs:
           export MACOSX_DEPLOYMENT_TARGET=10.15
           
           python setup.py bdist_wheel
-          for file in dist/*.whl; do echo {pip install --upgrade $file}; done
+          for file in dist/*.whl; do pip install --upgrade $file; done
           pytest
       
       - uses: actions/upload-artifact@v1
