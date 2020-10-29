@@ -48,8 +48,7 @@ jobs:
           pip install --quiet pytest==5.4.3 nbval
           export CC=clang
           export CXX=clang++
-          echo "Starting brew update"
-          brew update
+          
           echo "Starting protobuf install"
           brew install protobuf
           echo PATH: $PATH
