@@ -36,7 +36,7 @@ jobs:
       working-directory: ./protobuf_root/protobuf/cmake
       run: |         
          dir
-         cmake -G "Visual Studio 16 2019" -DCMAKE_INSTALL_PREFIX=../../protobuf_install -Dprotobuf_MSVC_STATIC_RUNTIME=ON -DProtobuf_USE_STATIC_LIBS=ON -Dprotobuf_BUILD_TESTS=OFF -Dprotobuf_BUILD_EXAMPLES=OFF
+         cmake -G "Visual Studio 16 2019" -Dprotobuf_MSVC_STATIC_RUNTIME=ON -DProtobuf_USE_STATIC_LIBS=ON -Dprotobuf_BUILD_TESTS=OFF -Dprotobuf_BUILD_EXAMPLES=OFF
          
 
     - name: Show Working directory
