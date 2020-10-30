@@ -74,6 +74,9 @@ jobs:
         $current_dir = Get-Location
         $protoc_path = Join-Path -Path $current_dir -ChildPath "Release"
         $Env:PATH="$ENV:PATH;$protoc_path"
+        cd ..
+        $current_dir = Get-Location
+        $protoc_path = Join-Path -Path $current_dir -ChildPath "src"
         $($Env:PATH).Split(';')
         protoc
         
