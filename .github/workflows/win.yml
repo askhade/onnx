@@ -24,41 +24,7 @@ jobs:
         
     - name: Add msbuild to PATH
       uses: microsoft/setup-msbuild@v1.0.2
-     
-    - name: Show Working directory
-      working-directory: ./protobuf_root
-      run: |
-          dir
-          mkdir protobuf_install
-          dir
-      
-    - name: Install Protobuf
-      working-directory: ./protobuf_root/protobuf/cmake
-      run: |         
-         dir
-         cmake -G "Visual Studio 16 2019"  -DCMAKE_INSTALL_PREFIX=../../protobuf_install -Dprotobuf_MSVC_STATIC_RUNTIME=ON -DProtobuf_USE_STATIC_LIBS=ON -Dprotobuf_BUILD_TESTS=OFF -Dprotobuf_BUILD_EXAMPLES=OFF .
-         msbuild protobuf.sln /m /p:Configuration=Release
-         msbuild INSTALL.vcxproj /p:Configuration=Release
-         dir
-         $current_dir = Get-Location
-         $protoc_path = Join-Path -Path $current_dir -ChildPath "Release"
-         $Env:PATH="$ENV:PATH;$protoc_path"
-         echo "$protoc_path" >> $GITHUB_PATH
-                  
-    - name: Set path variable
-      working-directory: ./protobuf_root/protobuf_install
-      run: |
-         dir
-         $($Env:PATH).Split(';')
-         protoc
-         
-         
-         
-    - name: Check Protobuf Installation
-      working-directory: ./protobuf_root/protobuf_install
-      run: |
-        dir
-      
+
     - name: Checkout ONNX
       uses: actions/checkout@v2
       with:
@@ -88,14 +54,33 @@ jobs:
         pip install pytest==5.4.3 nbval numpy wheel          
             
     - name: Build wheel
-      working-directory: ./onnx
       run: |        
         $($Env:PATH).Split(';')
+        echo "Install protobuf"
+        dir
+        cd ./protobuf_root/protobuf/cmake
+        dir
+        mkdir protobuf_install
+        cmake -G "Visual Studio 16 2019"  -DCMAKE_INSTALL_PREFIX=./protobuf_install -Dprotobuf_MSVC_STATIC_RUNTIME=ON -DProtobuf_USE_STATIC_LIBS=ON -Dprotobuf_BUILD_TESTS=OFF -Dprotobuf_BUILD_EXAMPLES=OFF .
+        msbuild protobuf.sln /m /p:Configuration=Release
+        msbuild INSTALL.vcxproj /p:Configuration=Release
+        echo "Protobuf installation complete."
+        echo "Set paths"
+        dir
+        cd protobuf_install
+        $current_dir = Get-Location
+        $protoc_path = Join-Path -Path $current_dir -ChildPath "bin"
+        $Env:PATH="$ENV:PATH;$protoc_path"
+        $($Env:PATH).Split(';')
+        protoc
         
+        cd ../../../../onnx
+        dir
+        echo "Install ONNX"
         $Env:USE_MSVC_STATIC_RUNTIME=1
         $Env:ONNX_ML=1
         $Env:CMAKE_ARGS="-DONNX_USE_PROTOBUF_SHARED_LIBS=OFF -DProtobuf_USE_STATIC_LIBS=ON -DONNX_USE_LITE_PROTO=ON -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=${{ matrix.architecture }}-windows-static"
-        python setup.py bdist_wheel
+        python setup.py bdist_wheel --project-dir ./onnx
         Get-ChildItem -Path dist/*.whl | foreach {pip install --upgrade $_.fullname}
         pytest
         # TODO: upload to PyPI automatically
