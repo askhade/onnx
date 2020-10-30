@@ -25,6 +25,9 @@ jobs:
         ref: refs/tags/v3.11.3
         path: ./protobuf_dir
         
+    - name: Add msbuild to PATH
+      uses: microsoft/setup-msbuild@v1.0.2
+     
     - name: Install Protobuf
       run: |
          mkdir protobuf_install
