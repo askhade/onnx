@@ -15,6 +15,12 @@ jobs:
         python-version: [3.6]
         architecture: ['x64']
     steps:
+    - name: Checkout Protobuf 
+      uses: actions/checkout@master
+      with:
+        repository: protocolbuffers/protobuf
+        ref: refs/tags/v3.11.3
+  
     - uses: actions/checkout@v2
     - name: Checkout submodules
       shell: bash
@@ -32,13 +38,7 @@ jobs:
         python -m pip install --upgrade pip
         # pytest 6.0 made deprecation warnings fail by default, pinning pytest to 5.4.3.
         # TODO replace deprecated function with the suggested one. https://docs.pytest.org/en/stable/deprecations.html#id5
-        pip install pytest==5.4.3 nbval numpy wheel
-      
-    - name: Checkout Protobuf 
-      uses: actions/checkout@master
-      with:
-        name: protocolbuffers/protobuf
-        ref: refs/tags/v3.11.3
+        pip install pytest==5.4.3 nbval numpy wheel          
             
     - name: Build wheel
       run: |
