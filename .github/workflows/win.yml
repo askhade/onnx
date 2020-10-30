@@ -66,7 +66,6 @@ jobs:
         msbuild INSTALL.vcxproj /p:Configuration=Release
         echo "Protobuf installation complete."
         echo "Set paths"
-        dir
         cd Release
         dir
         cd ..
@@ -76,7 +75,8 @@ jobs:
         $Env:PATH="$ENV:PATH;$protoc_path"
         cd ..
         $current_dir = Get-Location
-        $protoc_path = Join-Path -Path $current_dir -ChildPath "src"
+        $protobuf_include_path = Join-Path -Path $current_dir -ChildPath "src"
+        $Env:PATH="$ENV:PATH;$protobuf_include_path"
         $($Env:PATH).Split(';')
         protoc
         
