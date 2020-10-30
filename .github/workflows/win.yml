@@ -45,8 +45,8 @@ jobs:
       run: |
          dir
          $current_dir = Get-Location
-         $current-dir
-         echo "{current-dir}" >> $GITHUB_PATH
+         $current_dir
+         echo "{current_dir}" >> $GITHUB_PATH
          
          
     - name: Check PATH variable
