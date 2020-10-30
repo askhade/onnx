@@ -23,12 +23,16 @@ jobs:
       with:
         repository: protocolbuffers/protobuf
         ref: refs/tags/v3.11.3
-        path: ./protobuf_dir
+        path: ../protobuf_dir
      
     - name: Show Working directory
       run: dir
       
-    - uses: actions/checkout@v2
+    - name: Checkout ONNX
+      uses: actions/checkout@v2
+      with:
+         path: .
+         
     - name: Checkout submodules
       shell: bash
       run: |
