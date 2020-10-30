@@ -49,10 +49,10 @@ jobs:
          echo "{current_dir}" >> $GITHUB_PATH
          
          
-    - name: Check PATH variable
+    - name: Check Protobuf Installation
+      working-directory: ./protobuf_root/protobuf_install
       run: |
-        $x = Get-ChildItem Env:Path
-        $x.Value
+        dir
       
     - name: Checkout ONNX
       uses: actions/checkout@v2
@@ -85,6 +85,13 @@ jobs:
     - name: Build wheel
       working-directory: ./onnx
       run: |
+        $workspace_dir = $GITHUB_WORKSPACE
+        $protoc_path = Join-Path -Path $GITHUB_WORKSPACE -ChildPath "protobuf_root\protobuf_install\bin"
+        $protobuf_lib = Join-Path -Path $GITHUB_WORKSPACE -ChildPath "protobuf_root\protobuf_install\lib"
+        $protobuf_include = Join-Path -Path $GITHUB_WORKSPACE -ChildPath "protobuf_root\protobuf_install\include"
+        $Env:PATH="$ENV:PATH;$protoc_path;$protobuf_lib;$protobuf_include"
+        $($Env:PATH).Split(';')
+        
         $Env:USE_MSVC_STATIC_RUNTIME=1
         $Env:ONNX_ML=1
         $Env:CMAKE_ARGS="-DONNX_USE_PROTOBUF_SHARED_LIBS=OFF -DProtobuf_USE_STATIC_LIBS=ON -DONNX_USE_LITE_PROTO=ON -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=${{ matrix.architecture }}-windows-static"
