@@ -80,7 +80,7 @@ jobs:
         $($Env:PATH).Split(';')
         protoc
         
-        cd ../../../onnx
+        cd ../../onnx
         dir
         echo "Install ONNX"
         $Env:USE_MSVC_STATIC_RUNTIME=1
