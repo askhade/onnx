@@ -67,10 +67,12 @@ jobs:
         echo "Protobuf installation complete."
         echo "Set paths"
         dir
-        cd protobuf_install
+        cd Release
+        dir
+        cd ..
         dir
         $current_dir = Get-Location
-        $protoc_path = Join-Path -Path $current_dir -ChildPath "bin"
+        $protoc_path = Join-Path -Path $current_dir -ChildPath "Release"
         $Env:PATH="$ENV:PATH;$protoc_path"
         $($Env:PATH).Split(';')
         protoc
