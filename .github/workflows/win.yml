@@ -43,16 +43,15 @@ jobs:
          $current_dir = Get-Location
          $protoc_path = Join-Path -Path $current_dir -ChildPath "Release"
          $Env:PATH="$ENV:PATH;$protoc_path"
-         $($Env:PATH).Split(';')
-         protoc         
-
+         echo "$protoc_path" >> $GITHUB_PATH
+                  
     - name: Set path variable
       working-directory: ./protobuf_root/protobuf_install
       run: |
          dir
-         $current_dir = Get-Location
-         $current_dir
-         echo "{current_dir}" >> $GITHUB_PATH
+         $($Env:PATH).Split(';')
+         protoc
+         
          
          
     - name: Check Protobuf Installation
