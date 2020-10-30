@@ -14,10 +14,7 @@ jobs:
       matrix:
         python-version: [3.6]
         architecture: ['x64']
-    steps:
-    - name: Show Working directory
-      run: dir
-      
+    steps:         
     - name: Checkout Protobuf 
       uses: actions/checkout@master
       with:
@@ -28,9 +25,13 @@ jobs:
     - name: Add msbuild to PATH
       uses: microsoft/setup-msbuild@v1.0.2
      
+    - name: Show Working directory
+      run: dir
+      
     - name: Install Protobuf
       run: |
          mkdir protobuf_install
+         dir
          cd protobuf_dir
          cd cmake
          cmake -G "Visual Studio 16 2019" -DCMAKE_INSTALL_PREFIX=../../protobuf_install -Dprotobuf_MSVC_STATIC_RUNTIME=ON -DProtobuf_USE_STATIC_LIBS=ON -Dprotobuf_BUILD_TESTS=OFF -Dprotobuf_BUILD_EXAMPLES=OFF
