@@ -35,7 +35,7 @@ jobs:
         pip install pytest==5.4.3 nbval numpy wheel
       
     - name: Checkout Protobuf 
-      uses: actions/checkout@release
+      uses: actions/checkout@master
       with:
         name: protocolbuffers/protobuf
         ref: refs/tags/v3.11.3
