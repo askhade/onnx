@@ -68,6 +68,7 @@ jobs:
         echo "Set paths"
         dir
         cd protobuf_install
+        dir
         $current_dir = Get-Location
         $protoc_path = Join-Path -Path $current_dir -ChildPath "bin"
         $Env:PATH="$ENV:PATH;$protoc_path"
