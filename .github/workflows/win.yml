@@ -22,12 +22,20 @@ jobs:
         ref: refs/tags/v3.11.3
         path: ./protobuf_root/protobuf
         
+    - name: Checkout Protobuf submodules
+      shell: bash
+      run: |
+         cd ./protobuf_root/protobuf
+         auth_header="$(git config --local --get http.https://github.com/.extraheader)"
+         git submodule sync --recursive
+         git -c "http.extraheader=$auth_header" -c protocol.version=2 submodule update --init --force --recursive --depth=1
+        
     - name: Checkout ONNX
       uses: actions/checkout@v2
       with:
          path: ./onnx
          
-    - name: Checkout submodules
+    - name: Checkout ONNX submodules
       shell: bash
       run: |
          cd onnx
@@ -37,12 +45,7 @@ jobs:
         
     - name: Add msbuild to PATH
       uses: microsoft/setup-msbuild@v1.0.2
-
-    - name: Checkout ONNX
-      uses: actions/checkout@v2
-      with:
-         path: ./onnx
-             
+            
     - name: Set up Python ${{ matrix.python-version }}
       uses: actions/setup-python@v1
       with:
@@ -56,7 +59,7 @@ jobs:
         # TODO replace deprecated function with the suggested one. https://docs.pytest.org/en/stable/deprecations.html#id5
         pip install pytest==5.4.3 nbval numpy wheel          
             
-    - name: Build wheel
+    - name: Build ONNX wheel
       run: |        
         echo "Install protobuf"
         cd ./protobuf_root/protobuf
@@ -81,7 +84,7 @@ jobs:
         echo "Install ONNX"
         $Env:USE_MSVC_STATIC_RUNTIME=1
         $Env:ONNX_ML=1
-        $Env:CMAKE_ARGS="-DONNX_USE_PROTOBUF_SHARED_LIBS=OFF -DProtobuf_USE_STATIC_LIBS=ON -DONNX_USE_LITE_PROTO=ON -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=${{ matrix.architecture }}-windows-static"
+        $Env:CMAKE_ARGS="-DONNX_USE_PROTOBUF_SHARED_LIBS=OFF -DProtobuf_USE_STATIC_LIBS=ON -DONNX_USE_LITE_PROTO=ON"
         python setup.py bdist_wheel
         Get-ChildItem -Path dist/*.whl | foreach {pip install --upgrade $_.fullname}
         pytest
