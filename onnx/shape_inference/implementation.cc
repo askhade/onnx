@@ -108,6 +108,8 @@ void mergeShapesAndTypes(const TypeProto_Tensor& inferredType, TypeProto_Tensor*
     existingType->set_elem_type(inferredType.elem_type());
   }
 
+  //mergeInShapeInfo(inferredType, *existingType);
+
   if (!inferredType.has_shape()) {
     return;
   }
@@ -364,6 +366,304 @@ static void InferShapesImpl(
   }
 }
 
+using ValueInfoProtos = google::protobuf::RepeatedPtrField<ONNX_NAMESPACE::ValueInfoProto>;
+
+void extractSymbolsFromTypeProto(const TypeProto& type_proto, SymbolManager* symbolManager) {
+  if (type_proto.has_tensor_type() && type_proto.tensor_type().has_shape()) {
+    const auto& shape = type_proto.tensor_type().shape();
+    for (size_t i = 0; i < shape.dim_size(); i++) {
+      if (shape.dim(i).has_dim_param()) {
+        symbolManager->addSymbol(shape.dim(i).dim_param());
+      }
+    }
+  }
+}
+
+void extractValueInfoProto(ValueInfoProtos* mutable_value_info, std::unordered_map<std::string, TypeProto*>& valueTypesByName) {
+  for (auto& vi : *mutable_value_info) {
+    if (vi.has_type()) {
+      valueTypesByName[vi.name()] = vi.mutable_type();
+    }
+  }
+}
+
+void extractValueInfoProto(
+    ValueInfoProtos* mutable_value_info,
+    std::unordered_map<std::string, TypeProto*>& valueTypesByName,
+    SymbolManagerImpl& symbolManager) {
+  for (auto& vi : *mutable_value_info) {
+    if (vi.has_type()) {
+      valueTypesByName[vi.name()] = vi.mutable_type();
+      extractSymbolsFromTypeProto(vi.type(), &symbolManager);
+    }
+  }
+}
+Status extractInitializerDataAndType(
+    const GraphProto* g,
+    const int ir_version,
+    std::unordered_map<std::string, const TensorProto*>& inputDataByName,
+    std::vector<TypeProto>& initializerTypeList,
+    std::unordered_map<std::string, TypeProto*>& valueTypesByName) {
+    auto init_size = initializerTypeList.size();
+    initializerTypeList.reserve(init_size + g->initializer().size());
+    for (const auto& tp : g->initializer()) {
+      inputDataByName[tp.name()] = &tp;
+      if (tp.name() == "bert/embeddings/Reshape_2__43:0") {
+        std::cout << "time to break";
+      }
+
+      // Get initializer type and shape info
+      TypeProto initializerType;
+      TypeProto_Tensor* initializerTensorType = initializerType.mutable_tensor_type();
+      initializerTensorType->set_elem_type(tp.data_type());
+      TensorShapeProto* shape = initializerTensorType->mutable_shape();
+      for (int i = 0; i < tp.dims_size(); ++i) {
+        shape->add_dim()->set_dim_value(tp.dims(i));
+      }
+
+      // If it already exists in input, check input and initializer type and shape info match
+      // else if the IR_Version >=4 then it is not required for all the initializers be present in input as well
+      // so shape_inference should make use of initializer shapes therefore add pointer to initializer shape info
+      // in valueTypesByName
+      auto iter = valueTypesByName.find(tp.name());
+      if (iter != valueTypesByName.end()) {
+        checkShapesAndTypes(*initializerTensorType, *valueTypesByName[tp.name()]->mutable_tensor_type());
+      } else if (ir_version >= 4) {
+        initializerTypeList.emplace_back(std::move(initializerType));
+        valueTypesByName[tp.name()] = &(initializerTypeList[initializerTypeList.size() - 1]);
+      }
+    }
+    return Status::OK();
+}
+
+struct ShapeInferenceOptions{
+  int exception_mode = 1;
+   bool strict_mode = 0;
+  bool enable_symbolic_Shape_inference = true;
+   bool check_type = true;
+};
+
+void UpdateShapesWithSymbols(NodeProto& n, InferenceContext& ctx, SymbolManager& symbolManager) {
+  auto num_outputs = ctx.getNumOutputs();
+  for (int i = 0; i < num_outputs; i++) {
+    auto type = ctx.getOutputType(i);
+    if (type == nullptr) {
+      fail_shape_inference("output type is null");
+    }
+    if (type->has_tensor_type() && type->tensor_type().has_shape()) {
+      auto dim_size = type->tensor_type().shape().dim_size();
+      for (int j = 0; j < dim_size; j++) {
+          if (!type->tensor_type().shape().dim(j).has_dim_value() && !type->tensor_type().shape().dim(j).has_dim_param()) {
+          auto new_sym = symbolManager.createNewSymbol();
+            type->mutable_tensor_type()->mutable_shape()->mutable_dim(j)->set_dim_param(new_sym);
+          } else if (
+              type->tensor_type().shape().dim(j).has_dim_value() &&
+              (type->tensor_type().shape().dim(j).dim_value() == -1 ||
+               type->tensor_type().shape().dim(j).dim_value() == INT_MIN)) {
+            auto new_sym = symbolManager.createNewSymbol();
+            type->mutable_tensor_type()->mutable_shape()->mutable_dim(j)->set_dim_param(new_sym);
+          }
+      }
+    } else if (type->has_tensor_type() && !type->tensor_type().has_shape()) {
+     // fail_shape_inference("Node " + n.name() + " returned null shape. Shape inference needs to be updated to support atleast rank inference.");
+      std::cout << "Node " << n.name() << " returned null shape. Shape inference needs to be updated to support atleast rank inference." << std::endl;
+    }
+  }
+}
+
+static void SymbolicInferShapesImpl(
+    GraphProto* g,
+    const std::unordered_map<std::string, TypeProto*>& outer_scope_value_types_by_name,
+    const std::unordered_map<std::string, int>& opset_imports,
+    const ISchemaRegistry* schema_registry = OpSchemaRegistry::Instance(),
+    const int ir_version = IR_VERSION, // default the latest one
+    ShapeInferenceOptions options = {}) {
+  std::unordered_map<std::string, TypeProto*> valueTypesByName{outer_scope_value_types_by_name};
+  std::unordered_map<std::string, TypeProto*> undefinedValueTypesByName{outer_scope_value_types_by_name};
+
+  GraphInferenceContext graphInferenceContext{valueTypesByName, opset_imports, schema_registry};
+  SymbolManagerImpl symbolManager;
+
+
+  extractValueInfoProto(g->mutable_value_info(), valueTypesByName, symbolManager);
+  extractValueInfoProto(g->mutable_input(), valueTypesByName, symbolManager);
+
+  for (auto& vi : *g->mutable_output()) {
+    if (vi.has_type()) {
+      valueTypesByName[vi.name()] = vi.mutable_type();
+      extractSymbolsFromTypeProto(vi.type(), &symbolManager);
+    } else {
+      // Some output type might be undefined in subgraph. e.g., Loop Op
+      // Saving names of outputs with undefined types to allow assigning inferred types to them
+      undefinedValueTypesByName[vi.name()] = vi.mutable_type();
+    }
+  }
+
+  // extract initializer data and type info
+  std::unordered_map<std::string, const TensorProto*> inputDataByName;
+  std::unordered_map<std::string, TensorProto> generatedInputDataByName;
+  std::unordered_map<std::string, TensorShapeProto> generatedShapeDataByName;
+  std::vector<TypeProto> initializerTypeList;
+  extractInitializerDataAndType(g, ir_version, inputDataByName, initializerTypeList, valueTypesByName);
+
+  // collect data from constant nodes
+  for (const auto& n : g->node()) {
+    if (n.op_type() == "Constant" && n.output().size() == 1) {
+      for (const auto& attr : n.attribute()) {
+        if (attr.name() == "value" && attr.type() == AttributeProto::TENSOR && attr.has_t()) {
+          inputDataByName[n.output(0)] = &attr.t();
+        }
+      }
+    }
+  }
+
+  std::vector<std::string> inference_errors;
+  bool has_unsupported_op = false;
+
+  for (auto& n : *g->mutable_node()) {
+    if (n.name() == "Shape_34" || n.name() == "Gather_5" || n.name() == "Unsqueeze_11" || n.name() == "Cast_14" ||
+        n.name() == "Concat_12") {
+      std::cout << "time to break ";
+    }
+
+    if (n.name() == "ConstantOfShape_13") {
+      std::cout << "time to break";
+    }
+
+      // Stop shape inference and return if the model contains experimental ops
+    if (checker::check_is_experimental_op(n.op_type())) {
+      std::cerr << "Warning: Shape inference does not support"
+                << " models with experimental operators: " << n.op_type() << std::endl;
+      return;
+    }
+    // Resolve domain for node and schema
+    auto dit = opset_imports.find(n.domain());
+    if (dit == opset_imports.end()) {
+      continue;
+    }
+
+    SymbolicShapeInferenceContextImpl ctx(
+        n, valueTypesByName, inputDataByName, generatedShapeDataByName, &graphInferenceContext);
+
+    auto domain_version = dit->second;
+    const auto schema = schema_registry->GetSchema(n.op_type(), domain_version, n.domain());
+
+    // If schema is available run the node level type and shape inference function.
+    // The idea is to try and run shape inference for as many nodes as possible. So if schema is not available or
+    // we encounter an error or type and shape inference function is not available we simply save the error (where
+    // applicable) and hop to the next node.
+    ONNX_TRY {
+      if (!schema) {
+        std::cerr << "Warning: Unsupported operator " << n.op_type() << ". No schema registered for this operator."
+                  << std::endl;
+        has_unsupported_op = true;
+        continue;
+      } else if (schema->has_type_and_shape_inference_function()) {
+        schema->GetTypeAndShapeInferenceFunction()(ctx);
+      } else if (schema->HasFunction()) {
+        const auto func_proto = schema->GetFunction();
+        if (func_proto && func_proto->opset_import_size() > 0) {
+          // If function proto imports operator sets then merge them with model level opset imports.
+          std::unordered_map<std::string, int> function_opset_imports{opset_imports};
+          for (const auto& opset_import : func_proto->opset_import()) {
+            auto result =
+                function_opset_imports.insert({opset_import.domain(), static_cast<int>(opset_import.version())});
+            if (!result.second) {
+              fail_shape_inference(
+                  "ONNX models don't support multiple opset version imports for a domain. Function ",
+                  schema->Name(),
+                  " imports opset version " + std::to_string(opset_import.version()),
+                  " for domain ",
+                  (opset_import.domain().empty() ? "ai.onnx" : opset_import.domain()),
+                  " where as the model imports opset version ",
+                  std::to_string(result.first->second));
+            }
+          }
+          InferShapeForFunctionNode(func_proto, function_opset_imports, schema_registry, ctx);
+        } else {
+          // If the function proto does not import operator sets then simply use the model level opset imports.
+          InferShapeForFunctionNode(func_proto, opset_imports, schema_registry, ctx);
+        }
+      } else {
+        // Continue with inference for remaining nodes
+        continue;
+      }
+      if (ctx.getOutputName(0) == "bert/embeddings/Reshape_1:0") {
+        std::cout << "time to break";
+      }
+      
+      // Update empty shapes with symbols
+      UpdateShapesWithSymbols(n, ctx, symbolManager);
+
+      schema->GetDataPropagationFunction()(ctx);
+    }
+    ONNX_CATCH(const ONNX_NAMESPACE::InferenceError& ex) {
+      ONNX_HANDLE_EXCEPTION([&]() { inference_errors.push_back(getErrorWithNodeInfo(n, ex)); });
+      // continue with inference for remaining nodes
+      continue;
+    }
+
+    ONNX_TRY {
+      // check the type-equality for input and output
+      // Add support for type check
+      if (options.check_type) {
+        schema->CheckInputOutputType(ctx);
+      }
+      for (int i = 0; i < n.output_size(); ++i) {
+        const auto* inferredType = ctx.getOutputType(i);
+        if (inferredType->value_case() == TypeProto::ValueCase::VALUE_NOT_SET) {
+          continue;
+        }
+
+        // Find any pre-existing type and shape info. If there is such,
+        // then check for compatibility with the inferred
+        // information. Otherwise, initialize it in an empty state.
+        auto iter = valueTypesByName.find(n.output(i));
+        TypeProto* existingType = nullptr;
+        if (iter != valueTypesByName.end()) {
+          existingType = iter->second;
+        } else {
+          // Create a new value_info if defined type does not exist
+          auto vi = g->add_value_info();
+          vi->set_name(n.output(i));
+          existingType = vi->mutable_type();
+
+          // Assign inferredType to the existing output with undefined type
+          // This is because for undefined output type we update both value_info and output
+          iter = undefinedValueTypesByName.find(n.output(i));
+          if (iter != undefinedValueTypesByName.end()) {
+            *iter->second = *inferredType;
+          }
+        }
+
+        // Merge pre-existing and inferred info
+        mergeShapesAndTypes(*inferredType, existingType);
+
+        // Make merged info available to downstream nodes inference.
+        valueTypesByName[n.output(i)] = existingType;
+      }
+    }
+    ONNX_CATCH(const std::runtime_error& err) {
+      ONNX_HANDLE_EXCEPTION([&]() { fail_shape_inference(getErrorWithNodeInfo(n, err)); });
+    }
+  }
+
+  // Throw shape inference error if any
+  // Error mode right now only supports 0 and 1
+  // When set to 0, any node level shape inference errors
+  // are not thrown. This is to support backward compatiblity
+  // with 1.7 and earlier releases. When set to 1 it will throw
+  // all exceptions.
+  // TODO: Add a more granular way for exception handling.
+  if (options.exception_mode > 0 && !inference_errors.empty()) {
+    std::string full_errors = "Shape inference error(s): ";
+    for (const std::string& error : inference_errors) {
+      full_errors += error + "\n";
+    }
+    fail_shape_inference(full_errors);
+  }
+}
+
 void InferShapes(
     GraphProto* g,
     const std::unordered_map<std::string, int>& opset_imports,
@@ -380,12 +680,11 @@ void InferShapes(ModelProto& m, const bool check_type, const ISchemaRegistry* sc
     opset_imports[opset_import.domain()] = static_cast<int>(opset_import.version());
   }
   auto* g = m.mutable_graph();
-  InferShapesImpl(
+  //InferShapesImpl(g, std::unordered_map<std::string, TypeProto*>(0), opset_imports, check_type, error_mode, schema_registry, m.ir_version());
+  SymbolicInferShapesImpl(
       g,
       std::unordered_map<std::string, TypeProto*>(0),
       opset_imports,
-      check_type,
-      error_mode,
       schema_registry,
       m.ir_version());
 }
@@ -582,5 +881,24 @@ void deleteCreatedTypes(std::vector<TypeProto*> initializerTypeList) {
   }
 }
 
+std::string SymbolManagerImpl::createNewSymbol() {
+    int tryCount = 0;
+    do {
+      auto symbol = getNewSymbol();
+      if (std::find(symbols.cbegin(), symbols.cend(), symbol) == symbols.cend()) {
+        symbols.push_back(symbol);
+        return symbol;
+      }
+    } while (tryCount++ < symbolCreationRetries);
+    fail_shape_inference("Could not create a unique symbol");
+}
+
+  bool SymbolManagerImpl::addSymbol(const std::string& symbol) {
+    if (std::find(symbols.cbegin(), symbols.cend(), symbol) == symbols.cend()) {
+        symbols.push_back(symbol);
+        return true;
+    }
+    return false;
+  }
 } // namespace shape_inference
 } // namespace ONNX_NAMESPACE

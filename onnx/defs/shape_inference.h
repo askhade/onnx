@@ -22,6 +22,14 @@ class GraphInferencer {
   virtual ~GraphInferencer() = default;
 };
 
+// Keeps track of graph level symbolic dims
+class SymbolManager {
+ public:
+  virtual std::string createNewSymbol() = 0;
+  virtual bool addSymbol(const std::string&) = 0;
+};
+
+
 // Exception class used for handling errors in type and shape inference
 
 class InferenceError final : public std::runtime_error {
@@ -57,13 +65,21 @@ struct InferenceContext {
   virtual size_t getNumInputs() const = 0;
   virtual const TypeProto* getInputType(size_t index) const = 0;
   virtual const TensorProto* getInputData(size_t index) const = 0;
+  virtual void addOutputData(size_t index, TensorProto&& tp) = 0;
+  virtual void addGeneratedShapeData(size_t index, TensorShapeProto&& tp) = 0;
+  virtual const TensorShapeProto* getGeneratedShapeData(size_t index) const = 0;
   virtual size_t getNumOutputs() const = 0;
+  virtual std::string getOutputName(size_t index) const = 0;
   virtual TypeProto* getOutputType(size_t index) = 0;
   virtual GraphInferencer* getGraphAttributeInferencer(const std::string& attribute_name) = 0;
   virtual ~InferenceContext() {}
 };
 
 using InferenceFunction = std::function<void(InferenceContext&)>;
+using DataPropagationFunction = std::function<void(InferenceContext&)>;
+
+// This no-op data propagation function is used for operators without a defined data propagator
+inline void dummyDataPropogator(InferenceContext&) {}
 
 // This no-op inference function is used for operators without an
 // inference implementation.

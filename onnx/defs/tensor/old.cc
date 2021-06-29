@@ -7,6 +7,7 @@
 #include <cmath>
 #include <numeric>
 #include "onnx/defs/tensor/utils.h"
+#include "onnx/defs/data_propagators.h"
 
 namespace ONNX_NAMESPACE {
 
@@ -85,8 +86,8 @@ ONNX_OPERATOR_SET_SCHEMA(
           propagateElemTypeFromAttributeToOutput(ctx, "to", 0);
           if (hasNInputShapes(ctx, 1)) {
             propagateShapeFromInputToOutput(ctx, 0, 0);
-          }
-        }));
+          }})
+        .PartialDataPropagationFunction([](InferenceContext& ctx) { PropagateShapeDataFromInputToOutput(ctx, 0); }));
 
 static const char* Reshape_ver13_doc = R"DOC(
 Reshape the input tensor similar to numpy.reshape.
@@ -248,6 +249,142 @@ ONNX_OPERATOR_SET_SCHEMA(
           }
         }));
 
+void ReshapeTypeAndShapeInf(InferenceContext& ctx) {
+  // Type inference
+  propagateElemTypeFromInputToOutput(ctx, 0, 0);
+  const auto shape_data = ctx.getGeneratedShapeData(1);
+  if (shape_data && shape_data->dim_size() > 0) {
+    auto* outputShape = ctx.getOutputType(0)->mutable_tensor_type()->mutable_shape();
+    outputShape->CopyFrom(*shape_data);
+    return;
+  }
+  // Shape Inference if 2nd input data (the target shape) is available
+  const TensorProto* targetShapeInitializer = ctx.getInputData(1);
+  if (!targetShapeInitializer) {
+    return;
+  }
+  // Make targetShape (0 -> same as originalShape, -1 -> inferred).
+  // The targetShape vector represents the specified shape for output.
+  std::vector<int64_t> targetShape;
+  if (targetShapeInitializer->has_raw_data()) {
+    const std::string& bytes = targetShapeInitializer->raw_data();
+    targetShape.insert(
+        targetShape.end(),
+        reinterpret_cast<const int64_t*>(bytes.c_str()),
+        reinterpret_cast<const int64_t*>(bytes.c_str() + bytes.size()));
+  } else {
+    const auto& data = targetShapeInitializer->int64_data();
+    targetShape.insert(targetShape.end(), data.begin(), data.end());
+  }
+
+  // Iterate through targetShape, adding dimensions in the outputShape
+  // TensorProto. If the targertShape dimension is -1, we do not set the
+  // dimension value in this iteration, but we record the Dimension. If
+  // targertShape dimension is 0, we attempt to propagate the dimension
+  // value/param. If the value cannot be inferred, we set the flag in
+  // the unresolveZeros vector. If targetShape dimension is positive, we
+  // set the dimension value in the outputShape. We track the product of
+  // the dimensions we are setting outputShape in the outputProduct
+  // variable. The outputProduct will potentially be used for inferring
+  // a dimension marked -1.
+  auto* outputShape = 
+      ctx.getOutputType(0)->mutable_tensor_type()->mutable_shape();
+  TensorShapeProto::Dimension* negativeOneDim = nullptr;
+  const auto& dataInputTensorType = ctx.getInputType(0)->tensor_type();
+  std::vector<bool> unresolvedZeros(targetShape.size(), false);
+  int64_t outputProduct = 1;
+  for (int i = 0; i < static_cast<int>(targetShape.size()); ++i) {
+    // Add a new dimension to outputShape
+    auto* new_dim = outputShape->add_dim();
+    if (targetShape[i] == -1) {
+      // Check if multiple -1's. If not, set negativeOneDim, marking
+      // this dimension to potentially be filled in later.
+      if (negativeOneDim) {
+        fail_shape_inference(
+          "Target shape may not have multiple -1 dimensions");
+      }
+      negativeOneDim = new_dim;
+    } else if (targetShape[i] == 0) {
+      // Check if data input has a shape and if the index i is within
+      // its bounds. If these conditions are satisfied, any dimension
+      // value/param should be propogated. If dimension value cannot be
+      // inferred, set the corresponding  unresolvedZeros flag to true.
+      unresolvedZeros[i] = true;
+      if (dataInputTensorType.has_shape()) {
+        if (i >= dataInputTensorType.shape().dim_size()) {
+          fail_shape_inference("Invalid position of 0");
+        }
+        if (dataInputTensorType.shape().dim(i).has_dim_value()) {
+          const auto& dim_value =
+             dataInputTensorType.shape().dim(i).dim_value();
+          new_dim->set_dim_value(dim_value);
+          outputProduct *= dim_value;
+          unresolvedZeros[i] = false;
+        } else if (dataInputTensorType.shape().dim(i).has_dim_param()) {
+          const auto& dim_param =
+             dataInputTensorType.shape().dim(i).dim_param();
+          new_dim->set_dim_param(dim_param);
+        }
+      }
+    } else if (targetShape[i] > 0) {
+      // Set the dimension value to targetShape[i]
+      new_dim->set_dim_value(targetShape[i]);
+      outputProduct *= targetShape[i];
+    } else {
+      // Check if value is less than -1; fail if so
+      fail_shape_inference("Invalid dimension value: ", targetShape[i]);
+    }
+  }
+
+  // If negativeOneDim has been set, we attempt to infer its value. This
+  // can be done if all dimension values for the data input tensor shape
+  // are known other than the ones corresponding to unresolvedZeros
+  // flags.
+  if (negativeOneDim) {
+    // First, attempt to compute product of data input shape dimensions
+    // that are not marked by unresolvedZeros. If not possible, set the
+    // inputProductValid flag to false.
+    if (!outputProduct) {
+      fail_shape_inference("Invalid Target shape product of 0");
+    }
+    int64_t inputProduct = 1;
+    bool inputProductValid = true;
+    int numOfSymbolicDims = 0;
+    int symbolicDimPositionInInput = 0;
+    if (!dataInputTensorType.has_shape()) {
+      inputProductValid = false;
+    } else {
+      for (int i = 0; i < dataInputTensorType.shape().dim_size(); ++i) {
+        if (dataInputTensorType.shape().dim(i).has_dim_value()) {
+          inputProduct *=
+             dataInputTensorType.shape().dim(i).dim_value();
+        } else {
+          if (i >= static_cast<int>(unresolvedZeros.size()) || !unresolvedZeros[i]) {
+            inputProductValid = false;
+          }
+          if (dataInputTensorType.shape().dim(i).has_dim_param()) {
+            numOfSymbolicDims++;
+            symbolicDimPositionInInput = i;
+          }
+        }
+      }
+    }
+    if (inputProductValid) {
+      if (inputProduct % outputProduct != 0) {
+        fail_shape_inference(
+            "Dimension could not be inferred: incompatible shapes");
+      }
+      negativeOneDim->set_dim_value(inputProduct / outputProduct);
+    } else if (inputProduct == outputProduct && numOfSymbolicDims == 1) {
+      // special case. One of the shape dimensions is -1 and
+      // product of known input dimensions is equal to product of known output dimensions.
+      // we can use the existing symbol in input shape
+      const auto& dim_param = dataInputTensorType.shape().dim(symbolicDimPositionInInput).dim_param();
+      negativeOneDim->set_dim_param(dim_param);
+    }
+  }
+}
+
 static const char* Reshape_ver5_doc = R"DOC(
 Reshape the input tensor similar to numpy.reshape.
 First input is the data tensor, second input is a shape tensor which specifies the output shape. It outputs the reshaped tensor.
@@ -269,6 +406,8 @@ ONNX_OPERATOR_SET_SCHEMA(
             OpSchema::all_tensor_types(),
             "Constrain input and output types to all tensor types.")
         .TypeAndShapeInferenceFunction([](InferenceContext& ctx) {
+          ReshapeTypeAndShapeInf(ctx);
+          return;
           // Type inference
           propagateElemTypeFromInputToOutput(ctx, 0, 0);
           // Shape Inference if 2nd input data (the target shape) is available
@@ -391,6 +530,18 @@ static const char* Shape_ver1_doc = R"DOC(
 Takes a tensor as input and outputs an 1D int64 tensor containing the shape of the input tensor.
 )DOC";
 
+void ShapeOpInf(InferenceContext& ctx) {
+  ctx.getOutputType(0)->mutable_tensor_type()->set_elem_type(TensorProto::INT64);
+
+  if (!hasNInputShapes(ctx, 1)) {
+    return;
+  }
+
+  if (ctx.getInputType(0)->tensor_type().has_shape()) {
+    ctx.getOutputType(0)->mutable_tensor_type()->mutable_shape()->add_dim()->set_dim_value(
+        ctx.getInputType(0)->tensor_type().shape().dim_size());
+  }
+}
 ONNX_OPERATOR_SET_SCHEMA(
     Shape,
     1,
@@ -406,23 +557,9 @@ ONNX_OPERATOR_SET_SCHEMA(
             "T1",
             {"tensor(int64)"},
             "Constrain output to int64 tensor.")
-        .TypeAndShapeInferenceFunction([](InferenceContext& ctx) {
-          ctx.getOutputType(0)->mutable_tensor_type()->set_elem_type(
-              TensorProto::INT64);
-
-          if (!hasNInputShapes(ctx, 1)) {
-            return;
-          }
-
-          if (ctx.getInputType(0)->tensor_type().has_shape()) {
-            ctx.getOutputType(0)
-                ->mutable_tensor_type()
-                ->mutable_shape()
-                ->add_dim()
-                ->set_dim_value(
-                    ctx.getInputType(0)->tensor_type().shape().dim_size());
-          }
-        }));
+        .TypeAndShapeInferenceFunction([](InferenceContext& ctx) { ShapeOpInf(ctx);
+        })
+        .PartialDataPropagationFunction([](InferenceContext& ctx) { ShapeDataPropagator(ctx); }));
 
 static const char* Size_ver1_doc = R"DOC(
 Takes a tensor as input and outputs a int64 scalar that equals to the total number of elements of the input tensor.
@@ -531,6 +668,18 @@ ONNX_OPERATOR_SET_SCHEMA(
 
           if (all_lengths_known) {
             output_shape->mutable_dim(axis)->set_dim_value(total_length);
+          }
+        })
+        .PartialDataPropagationFunction([](InferenceContext& ctx) {
+          auto output_type = ctx.getOutputType(0);
+          if (output_type->has_tensor_type() && output_type->tensor_type().elem_type() == TensorProto_DataType_INT64) {
+            ConcatenateData<int64_t>(ctx, 7);
+          } else if (
+              output_type->has_tensor_type() && output_type->tensor_type().elem_type() == TensorProto_DataType_INT32) {
+            ConcatenateData<int32_t>(ctx, 6);
+          }
+          else {
+            std::cout << "can only handle int64 and int32 at this time";
           }
         }));
 
@@ -1198,6 +1347,10 @@ output[i_{0}, ..., i_{q-1}, j_{0}, ..., j_{r-2}] = input[j_{0}, k, j_{1}, ..., j
 ```
 )DOC";
 
+void GatherShapeInf(InferenceContext& ctx) {
+  
+}
+
 ONNX_OPERATOR_SET_SCHEMA(
     Gather,
     11,
@@ -1259,7 +1412,8 @@ ONNX_OPERATOR_SET_SCHEMA(
                                             : // i - axis < q
                     data_shape.dim(i - q + 1); // i < out_rank < q + r - 1
           }
-        }));
+        })
+        .PartialDataPropagationFunction([](InferenceContext& ctx) { GatherDataPropagator(ctx); }));
 
 static const char* GatherElements_ver11_doc = R"DOC(
 
@@ -1501,33 +1655,21 @@ ONNX_OPERATOR_SET_SCHEMA(
 
           int j = 0;
           for (int i = 0; i < input_ndim; ++i) {
-            while (static_cast<size_t>(j) < axes.size() &&
-                   axes[j] ==
-                       ctx.getOutputType(0)->tensor_type().shape().dim_size()) {
-              ctx.getOutputType(0)
-                  ->mutable_tensor_type()
-                  ->mutable_shape()
-                  ->add_dim()
-                  ->set_dim_value(1);
+            while (static_cast<size_t>(j) < axes.size() && 
+                   axes[j] == ctx.getOutputType(0)->tensor_type().shape().dim_size()) {
+              ctx.getOutputType(0)->mutable_tensor_type()->mutable_shape()->add_dim()->set_dim_value(1);
               ++j;
             }
-            *ctx.getOutputType(0)
-                 ->mutable_tensor_type()
-                 ->mutable_shape()
-                 ->add_dim() =
+            *ctx.getOutputType(0)->mutable_tensor_type()->mutable_shape()->add_dim() =
                 ctx.getInputType(0)->tensor_type().shape().dim(i);
           }
-          while (static_cast<size_t>(j) < axes.size() &&
-                 axes[j] ==
-                     ctx.getOutputType(0)->tensor_type().shape().dim_size()) {
-            ctx.getOutputType(0)
-                ->mutable_tensor_type()
-                ->mutable_shape()
-                ->add_dim()
-                ->set_dim_value(1);
+          while (static_cast<size_t>(j) < axes.size() && 
+                 axes[j] == ctx.getOutputType(0)->tensor_type().shape().dim_size()) {
+            ctx.getOutputType(0)->mutable_tensor_type()->mutable_shape()->add_dim()->set_dim_value(1);
             ++j;
           }
-        }));
+        })
+        .PartialDataPropagationFunction([](InferenceContext& ctx) { PropagateShapeDataFromInputToOutput(ctx, 0); }));
 
 static const char* SpaceToDepth_ver1_doc =
     R"DOC(SpaceToDepth rearranges blocks of spatial data into depth. More specifically,
@@ -2458,6 +2600,16 @@ ONNX_OPERATOR_SET_SCHEMA(
 
           if (all_lengths_known) {
             output_shape->mutable_dim(axis)->set_dim_value(total_length);
+          }})
+        .PartialDataPropagationFunction([](InferenceContext& ctx) {
+          auto output_type = ctx.getOutputType(0);
+          if (output_type->has_tensor_type() && output_type->tensor_type().elem_type() == TensorProto_DataType_INT64) {
+            ConcatenateData<int64_t>(ctx, 7);
+          } else if (
+              output_type->has_tensor_type() && output_type->tensor_type().elem_type() == TensorProto_DataType_INT32) {
+            ConcatenateData<int32_t>(ctx, 6);
+          } else {
+            std::cout << "can only handle int64 and int32 at this time";
           }
         }));
 
@@ -3162,7 +3314,9 @@ ONNX_OPERATOR_SET_SCHEMA(
                 ->mutable_dim((int)axis)
                 ->set_dim_value(temp);
           }
-        }));
+        })
+        .PartialDataPropagationFunction([](InferenceContext& ctx) { SliceDataPropagator(ctx); })
+        );
 
 static const char* Scatter_ver9_doc = R"DOC(
 Given `data`, `updates` and `indices` input tensors of rank r >= 1, write the values provided by `updates`
@@ -3461,7 +3615,8 @@ ONNX_OPERATOR_SET_SCHEMA(
                    ->add_dim() = input_shape.dim(i);
             }
           }
-        }));
+        })
+        .PartialDataPropagationFunction([](InferenceContext& ctx) { PropagateShapeDataFromInputToOutput(ctx, 0); }));
 
 static const char* Unsqueeze_ver1_doc = R"DOC(
 Insert single-dimensional entries to the shape of a tensor.
@@ -3534,7 +3689,8 @@ ONNX_OPERATOR_SET_SCHEMA(
                 ->set_dim_value(1);
             ++j;
           }
-        }));
+        })
+        .PartialDataPropagationFunction([](InferenceContext& ctx) { PropagateShapeDataFromInputToOutput(ctx, 0); }));
 
 static const char* OneHot_ver9_doc = R"DOC(
     Produces a one-hot tensor based on inputs.
@@ -4071,5 +4227,8 @@ ONNX_OPERATOR_SET_SCHEMA(
                  ->mutable_shape()
                  ->add_dim() = data_shape.dim(i);
           }
+        })
+        .PartialDataPropagationFunction([](InferenceContext& ctx) {
+            GatherDataPropagator(ctx); 
         }));
 } // namespace ONNX_NAMESPACE

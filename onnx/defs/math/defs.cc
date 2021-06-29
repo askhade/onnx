@@ -152,12 +152,91 @@ from the back. Accepted range is [-r, r-1] where r = rank(input).,
 ONNX_OPERATOR_SET_SCHEMA(
     Add,
     13,
-    OpSchema().FillUsing(MathDocGenerator("addition")));
+    OpSchema().FillUsing(MathDocGenerator("addition"))
+    .PartialDataPropagationFunction([](InferenceContext& ctx) {
+      
+      auto output_type = ctx.getOutputType(0);
+      if (!(output_type->tensor_type().shape().dim_size() == 1 &&
+             output_type->tensor_type().shape().dim(0).dim_value() == 1) ||
+            !(output_type->tensor_type().shape().dim_size() == 0)) {
+                return;
+      }
+
+      int32_t input_val_0 = 0;
+      int32_t input_val_1 = 0;
+
+      auto input_0 = ctx.getInputData(0);
+      auto input_1 = ctx.getInputData(1);
+      if (input_0 != nullptr) {
+          input_val_0 = ParseData<int32_t>(input_0)[0];
+      } else {
+          auto input_shapeproto = ctx.getGeneratedShapeData(0);
+          if(input_shapeproto == nullptr) {
+              return;
+          }
+
+          input_val_0 = input_shapeproto->dim(0).dim_value();
+      }
+      
+      if (input_1 != nullptr) {
+          input_val_1 = ParseData<int32_t>(input_1)[0];
+      } else {
+          auto input_shapeproto = ctx.getGeneratedShapeData(1);
+          if(input_shapeproto == nullptr) {
+              return;
+          }
+
+          input_val_1 = input_shapeproto->dim(0).dim_value();
+      }
+      int32_t result = input_val_0 + input_val_1;
+      TensorShapeProto tp;
+      tp.mutable_dim()->Add()->set_dim_value(result);
+      ctx.addGeneratedShapeData(0, std::move(tp));
+    }));
 
 ONNX_OPERATOR_SET_SCHEMA(
     Sub,
     13,
-    OpSchema().FillUsing(MathDocGenerator("subtraction")));
+    OpSchema().FillUsing(MathDocGenerator("subtraction"))
+    .PartialDataPropagationFunction([](InferenceContext& ctx) {
+            auto output_type = ctx.getOutputType(0);
+      if (!(output_type->tensor_type().shape().dim_size() == 1 &&
+             output_type->tensor_type().shape().dim(0).dim_value() == 1) ||
+            !(output_type->tensor_type().shape().dim_size() == 0)) {
+                return;
+      }
+
+      int32_t input_val_0 = 0;
+      int32_t input_val_1 = 0;
+
+      auto input_0 = ctx.getInputData(0);
+      auto input_1 = ctx.getInputData(1);
+      if (input_0 != nullptr) {
+          input_val_0 = ParseData<int32_t>(input_0)[0];
+      } else {
+          auto input_shapeproto = ctx.getGeneratedShapeData(0);
+          if(input_shapeproto == nullptr) {
+              return;
+          }
+
+          input_val_0 = input_shapeproto->dim(0).dim_value();
+      }
+      
+      if (input_1 != nullptr) {
+          input_val_1 = ParseData<int32_t>(input_1)[0];
+      } else {
+          auto input_shapeproto = ctx.getGeneratedShapeData(1);
+          if(input_shapeproto == nullptr) {
+              return;
+          }
+
+          input_val_1 = input_shapeproto->dim(0).dim_value();
+      }
+      int32_t result = input_val_0 - input_val_1;
+      TensorShapeProto tp;
+      tp.mutable_dim()->Add()->set_dim_value(result);
+      ctx.addGeneratedShapeData(0, std::move(tp));
+    }));
 
 static const char* Mod_doc = R"DOC(
   Performs element-wise binary modulus (with Numpy-style broadcasting support).
@@ -225,7 +304,46 @@ ONNX_OPERATOR_SET_SCHEMA(
 ONNX_OPERATOR_SET_SCHEMA(
     Mul,
     13,
-    OpSchema().FillUsing(MathDocGenerator("multiplication")));
+    OpSchema().FillUsing(MathDocGenerator("multiplication"))
+.PartialDataPropagationFunction([](InferenceContext& ctx){
+            auto output_type = ctx.getOutputType(0);
+      if (!(output_type->tensor_type().shape().dim_size() == 1 &&
+             output_type->tensor_type().shape().dim(0).dim_value() == 1) ||
+            !(output_type->tensor_type().shape().dim_size() == 0)) {
+                return;
+      }
+
+      int32_t input_val_0 = 0;
+      int32_t input_val_1 = 0;
+
+      auto input_0 = ctx.getInputData(0);
+      auto input_1 = ctx.getInputData(1);
+      if (input_0 != nullptr) {
+          input_val_0 = ParseData<int32_t>(input_0)[0];
+      } else {
+          auto input_shapeproto = ctx.getGeneratedShapeData(0);
+          if(input_shapeproto == nullptr) {
+              return;
+          }
+
+          input_val_0 = input_shapeproto->dim(0).dim_value();
+      }
+      
+      if (input_1 != nullptr) {
+          input_val_1 = ParseData<int32_t>(input_1)[0];
+      } else {
+          auto input_shapeproto = ctx.getGeneratedShapeData(1);
+          if(input_shapeproto == nullptr) {
+              return;
+          }
+
+          input_val_1 = input_shapeproto->dim(0).dim_value();
+      }
+      int32_t result = input_val_0 * input_val_1;
+      TensorShapeProto tp;
+      tp.mutable_dim()->Add()->set_dim_value(result);
+      ctx.addGeneratedShapeData(0, std::move(tp));
+    }));
 
 ONNX_OPERATOR_SET_SCHEMA(
     Div,

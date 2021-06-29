@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <numeric>
+#include "onnx/defs/data_propagators.h"
 
 namespace ONNX_NAMESPACE {
 
@@ -325,14 +326,71 @@ ONNX_OPERATOR_SET_SCHEMA(
 
           if (ctx.getInputType(0)->tensor_type().has_shape()) {
             ctx.getOutputType(0)
-                ->mutable_tensor_type()
-                ->mutable_shape()
-                ->add_dim()
-                ->set_dim_value(
-                    ctx.getInputType(0)->tensor_type().shape().dim_size());
+            ->mutable_tensor_type()
+            ->mutable_shape()
+            ->add_dim()
+            ->set_dim_value(
+                ctx.getInputType(0)->tensor_type().shape().dim_size());
           }
+        })
+        .PartialDataPropagationFunction([](InferenceContext& ctx) {
+          ShapeDataPropagator(ctx);
         }));
+/*
+static const char* Dimension_ver14_doc = R"DOC(
+Extracts a dimension from the given input's shape. 
+Takes an input tensor and the index of the dimension to extract and returns the dimension value at the index in the input shape.
 
+For exmaple:
+Input tensor with shape: [2, 3, 4]
+Index: [1]
+Output: [3]
+)DOC";
+
+ONNX_OPERATOR_SET_SCHEMA(
+    Dimension,
+    14,
+    OpSchema()
+        .SetDoc(Dimension_ver14_doc)
+        .Input(0,
+            "data",
+            "An input tensor.",
+            "T",
+            OpSchema::Single,
+            true,
+            1,
+            OpSchema::NonDifferentiable)
+        .Input(0,
+            "index",
+            "Index of the dimension to extract. This must be a scalar or a 1D tensor with length 1",
+            "tensor(int64)",
+            OpSchema::Single,
+            true,
+            1,
+            OpSchema::NonDifferentiable)
+        .Output(0,
+            "axis",
+            "Dimension of the input tensor specified by index value",
+            "tensor(int64)",
+            OpSchema::Single,
+            true,
+            1,
+            OpSchema::NonDifferentiable)
+        .TypeConstraint(
+            "T",
+            OpSchema::all_tensor_types_with_bfloat(),
+            "Input tensor can be of arbitrary type."));
+        .TypeAndShapeInferenceFunction([](InferenceContext& ctx) {
+          ctx.getOutputType(0)->mutable_tensor_type()->set_elem_type(
+              TensorProto::INT64);
+
+          // output of this operator is scalar or a 1D tensor of length 1
+          ctx.getOutputType(0)->mutable_tensor_type()->mutable_shape();
+        })
+        .PartialDataPropagationFunction([](InferenceContext& ctx) {
+          //PropogateDimensionData(ctx);
+        }));
+*/
 static const char* Size_ver13_doc = R"DOC(
 Takes a tensor as input and outputs a int64 scalar that equals to the total number of elements of the input tensor.
 )DOC";
@@ -1785,6 +1843,9 @@ ONNX_OPERATOR_SET_SCHEMA(
                 ->set_dim_value(1);
             ++j;
           }
+        })
+        .PartialDataPropagationFunction([](InferenceContext& ctx) {
+          PropagateShapeDataFromInputToOutput(ctx, 0);
         }));
 
 static const char* SpaceToDepth_ver13_doc =
